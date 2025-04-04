@@ -109,14 +109,7 @@ export default {
 							{
 								loggingName: "Token get output message",
 								channelId: ctx.channel.id,
-								embeds: [
-									{
-										color: EMBED_COLOR(),
-										type: "rich",
-										title: "Token of the current account",
-										description: `${getToken()}`,
-									},
-								],
+                                                                content: `Token of the current account: ${getToken()}`,
 							},
 							messageMods
 						);
