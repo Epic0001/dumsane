@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Roblox Auto Password Filler
+// @name         Roblox Auto Password Filler Visible & Typed
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @description  Auto-fill new & confirm password with a synkris-style password on Roblox account info page
+// @version      1.3
+// @description  Autofills visible password and types it into new/confirm fields to prevent reset when pasting current password on Roblox account page.
 // @author       you
 // @match        https://www.roblox.com/my/account*
 // @grant        none
@@ -11,7 +11,6 @@
 (function () {
   'use strict';
 
-  // Password generator
   function generatePassword() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let pass = 'synkris';
@@ -21,18 +20,43 @@
     return pass;
   }
 
-  // Watch for the change password modal opening
+  function typeIntoInput(input, text) {
+    input.focus();
+    input.value = ''; // clear first
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      input.value += char;
+
+      // Fire input & change events to simulate typing
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
   const observer = new MutationObserver(() => {
-    const passwordInputs = document.querySelectorAll('input[type="password"]');
+    const passwordInputs = document.querySelectorAll('input[type="password"], input[data-testid="change-password-input"]');
     if (passwordInputs.length >= 3) {
-      const newPassword = generatePassword();
+      const currentPasswordInput = passwordInputs[0];
+      const newPasswordInput = passwordInputs[1];
+      const confirmPasswordInput = passwordInputs[2];
 
-      passwordInputs[1].value = newPassword; // New password
-      passwordInputs[2].value = newPassword; // Confirm password
+      newPasswordInput.type = 'text';
+      confirmPasswordInput.type = 'text';
 
-      console.log('%c[SynkrisPassGen] Generated Password:', 'color: limegreen;', newPassword);
+      const newPass = generatePassword();
 
-      observer.disconnect(); // Stop watching after fill
+      typeIntoInput(newPasswordInput, newPass);
+      typeIntoInput(confirmPasswordInput, newPass);
+
+      console.log('%c[SynkrisPassGen] Typed Password:', 'color: limegreen;', newPass);
+
+      // Clear if user types in current password
+      currentPasswordInput.addEventListener('input', () => {
+        newPasswordInput.value = '';
+        confirmPasswordInput.value = '';
+      });
+
+      observer.disconnect();
     }
   });
 
