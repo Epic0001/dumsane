@@ -1,123 +1,164 @@
 // ==UserScript==
 // @name         FastPeopleSearch - Windermere Ct Batch Scraper (200-230)
-// @namespace    http://yournamespace/
-// @version      1.1
-// @description  Opens or scrapes resident info for addresses 200-230 Windermere Ct, Canonsburg PA 15317
+// @namespace    http://tampermonkey.net/
+// @version      1.2
+// @description  Scrape resident info for Windermere Ct addresses 200-230 (auto-open tabs + extract)
 // @author       You
-// @match        https://www.fastpeoplesearch.com/address/*-Windermere-Ct_Canonsburg-PA-15317
+// @match        https://www.fastpeoplesearch.com/*
 // @grant        GM_setClipboard
 // @grant        GM_notification
-// @grant        unsafeWindow
 // @run-at       document-end
 // ==/UserScript==
 
-(function () {
+(function() {
     'use strict';
 
-    // Change to true if you want it to auto-open all tabs (careful – 31 tabs!)
-    const AUTO_OPEN_TABS = true;
+    // === CONFIG ===
+    const AUTO_OPEN_TABS = true;          // Set to true → button opens all 31 tabs
+    const OPEN_DELAY_MS = 800;             // Delay between opening tabs (helps avoid popup blocker)
+    const BATCH_SCRAPE_ON_LOAD = false;    // If true + tabs open: auto-extract & store when page loads
 
-    // If false, it will scrape the CURRENT page only when you load it
-    const BATCH_SCRAPE_ON_LOAD = false;   // usually keep false unless you want auto-scrape
+    // Selector targets the common resident paragraph (based on site examples)
+    const RESIDENT_SELECTOR = 'p, div, span, li';
+    const KEY_PHRASE = /The most recent tenant is.*Past residents include/;
 
-    // Where the resident text usually lives (based on common patterns; may need adjustment)
-    const SELECTOR = 'div:contains("most recent"), div:contains("current resident"), div:contains("Past residents"), p:contains("tenant"), .card-body, .profile-info, [class*="resident"], [class*="occupant"], [class*="history"]';
+    // === STORAGE KEY ===
+    const STORAGE_KEY = 'windermere_scrape_results';
 
-    // Container to show results if scraping current page
-    function addResultsBox() {
-        if (document.getElementById('scraper-results')) return;
-        const box = document.createElement('div');
-        box.id = 'scraper-results';
-        box.style.cssText = 'position:fixed; top:10px; right:10px; width:380px; max-height:80vh; overflow-y:auto; background:#fff; border:2px solid #0066cc; padding:12px; z-index:999999; font-family:Arial; font-size:14px; box-shadow:0 0 15px rgba(0,0,0,0.5);';
-        document.body.appendChild(box);
-        return box;
+    // === FUNCTIONS ===
+    function getAddressNumber() {
+        const match = location.href.match(/\/address\/(\d+)-Windermere-Ct_Canonsburg-PA-15317/);
+        return match ? match[1] : null;
     }
 
-    function extractResidentText() {
-        // Try common selectors first
+    function extractResidentInfo() {
         let text = '';
-
-        // Look for paragraphs or divs with the phrase
-        const candidates = document.querySelectorAll('p, div, li, span');
-        for (const el of candidates) {
-            const t = el.textContent.trim();
-            if (t.includes('most recent tenant') || t.includes('current resident') || t.includes('Past residents include')) {
-                text = t;
+        const elements = document.querySelectorAll(RESIDENT_SELECTOR);
+        for (const el of elements) {
+            const content = el.textContent.trim();
+            if (KEY_PHRASE.test(content)) {
+                text = content.replace(/\s+/g, ' ').trim();
                 break;
             }
         }
-
-        // Fallback: broader search
-        if (!text) {
-            const broad = document.querySelector(SELECTOR);
-            if (broad) text = broad.textContent.trim().replace(/\s+/g, ' ');
-        }
-
-        return text || 'No matching resident text found on this page.';
+        return text || 'No resident info found (check if CAPTCHA or page loaded fully).';
     }
 
-    // If on a matching address page
-    if (location.href.includes('Windermere-Ct_Canonsburg-PA-15317')) {
-        const addressNum = location.href.match(/\/address\/(\d+)-Windermere/)?.[1] || '???';
-
-        if (BATCH_SCRAPE_ON_LOAD) {
-            // Auto-scrape when page loads (useful if opening many tabs)
-            const info = extractResidentText();
-            const result = `${addressNum}: ${info}\n\n`;
-
-            // Append to a global-ish storage or just copy
-            let all = localStorage.getItem('windermere_scrape') || '';
-            all += result;
-            localStorage.setItem('windermere_scrape', all);
-
-            // Show notification
-            GM_notification({
-                title: `Scraped ${addressNum}`,
-                text: info.substring(0, 120) + '...',
-                timeout: 4000
-            });
-
-            // Optional: auto-close tab after scrape
-            // setTimeout(() => window.close(), 3000);
-        } else {
-            // Manual mode: show button + result box on page
-            const box = addResultsBox();
-            box.innerHTML = `<h3 style="margin:0 0 10px;">Address ${addressNum}</h3>
-                             <button id="scrape-this" style="padding:8px 16px; background:#0066cc; color:white; border:none; cursor:pointer;">Extract Residents</button>
-                             <pre id="result-text" style="white-space:pre-wrap; margin-top:12px;"></pre>
-                             <button id="copy-all" style="margin-top:10px; padding:6px 12px;">Copy All Collected</button>`;
-
-            document.getElementById('scrape-this').onclick = () => {
-                const info = extractResidentText();
-                document.getElementById('result-text').textContent = info;
-                GM_notification({title: 'Extracted', text: info.substring(0, 80) + '...'});
-            };
-
-            document.getElementById('copy-all').onclick = () => {
-                const all = localStorage.getItem('windermere_scrape') || 'Nothing collected yet.';
-                GM_setClipboard(all);
-                alert('All collected results copied to clipboard!\n\n' + all.substring(0, 300) + '...');
-            };
+    function saveResult(num, info) {
+        let data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        if (!data.some(item => item.num === num)) {
+            data.push({ num, info, timestamp: new Date().toISOString() });
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         }
     }
 
-    // Optional: Add a floating start button on any page (or just on fastpeoplesearch.com home)
-    if (!AUTO_OPEN_TABS) {
-        const startBtn = document.createElement('button');
-        startBtn.textContent = 'Start Windermere 200-230 Scrape';
-        startBtn.style.cssText = 'position:fixed; bottom:20px; left:20px; z-index:999999; padding:12px 20px; background:#ff4444; color:white; border:none; border-radius:6px; font-size:16px; cursor:pointer; box-shadow:0 4px 10px rgba(0,0,0,0.4);';
-        document.body.appendChild(startBtn);
+    function getAllResults() {
+        const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        return data.map(item => `${item.num}: ${item.info}`).join('\n\n');
+    }
 
-        startBtn.onclick = () => {
+    function clearResults() {
+        localStorage.removeItem(STORAGE_KEY);
+        alert('Collected data cleared!');
+    }
+
+    // === AUTO-SCRAPE ON PAGE LOAD (if enabled) ===
+    if (BATCH_SCRAPE_ON_LOAD && getAddressNumber()) {
+        const num = getAddressNumber();
+        const info = extractResidentInfo();
+        saveResult(num, info);
+        GM_notification({
+            title: `Auto-scraped ${num}`,
+            text: info.substring(0, 100) + (info.length > 100 ? '...' : ''),
+            timeout: 5000
+        });
+        // Optional: close tab after scrape
+        // setTimeout(() => window.close(), 4000);
+    }
+
+    // === FLOATING CONTROL PANEL ===
+    function createControlPanel() {
+        if (document.getElementById('windermere-control-panel')) return;
+
+        const panel = document.createElement('div');
+        panel.id = 'windermere-control-panel';
+        panel.style.cssText = `
+            position: fixed; bottom: 20px; left: 20px; z-index: 999999;
+            background: #1e3a8a; color: white; padding: 16px; border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6); font-family: Arial, sans-serif;
+            width: 320px; font-size: 14px;
+        `;
+
+        let html = `
+            <strong>Windermere Ct Scraper (200-230)</strong><br><br>
+            <button id="btn-open-tabs" style="padding:10px 16px; background:#3b82f6; border:none; color:white; border-radius:6px; cursor:pointer; width:100%; margin-bottom:10px;">
+                ${AUTO_OPEN_TABS ? 'Open All 31 Address Tabs' : 'Show Instructions / Manual Mode'}
+            </button>
+            <button id="btn-copy-all" style="padding:8px 16px; background:#10b981; border:none; color:white; border-radius:6px; cursor:pointer; width:48%; margin-right:4%;">
+                Copy All Collected
+            </button>
+            <button id="btn-clear" style="padding:8px 16px; background:#ef4444; border:none; color:white; border-radius:6px; cursor:pointer; width:48%;">
+                Clear Data
+            </button>
+            <div id="status" style="margin-top:12px; white-space:pre-wrap; max-height:200px; overflow-y:auto; background:rgba(255,255,255,0.15); padding:8px; border-radius:4px;"></div>
+        `;
+
+        panel.innerHTML = html;
+        document.body.appendChild(panel);
+
+        // Event listeners
+        document.getElementById('btn-open-tabs').onclick = () => {
             if (AUTO_OPEN_TABS) {
-                if (!confirm('This will try to open ~31 tabs. Continue?')) return;
-                for (let num = 200; num <= 230; num++) {
-                    window.open(`https://www.fastpeoplesearch.com/address/${num}-Windermere-Ct_Canonsburg-PA-15317`, '_blank');
+                if (!confirm('Opening ~31 tabs — browser may block some. Continue?')) return;
+                let i = 200;
+                function openNext() {
+                    if (i > 230) return;
+                    window.open(`https://www.fastpeoplesearch.com/address/${i}-Windermere-Ct_Canonsburg-PA-15317`, '_blank');
+                    i++;
+                    setTimeout(openNext, OPEN_DELAY_MS);
                 }
+                openNext();
             } else {
-                alert('Manual mode active.\n\n1. Click the button above to open tabs manually (or use AUTO_OPEN_TABS = true)\n2. On each address page, click "Extract Residents"\n3. Use "Copy All Collected" to get everything');
+                alert(`Manual mode active:\n\n1. Set AUTO_OPEN_TABS = true in script to auto-open tabs\n2. Or open pages yourself (e.g., change 205 to 200, 201, etc.)\n3. On each address page:\n   - If BATCH_SCRAPE_ON_LOAD = true → auto-saves\n   - Else click the blue "Extract..." button if added\n4. Come back here & click "Copy All Collected"`);
             }
         };
+
+        document.getElementById('btn-copy-all').onclick = () => {
+            const all = getAllResults();
+            if (!all.trim()) {
+                alert('No data collected yet.');
+                return;
+            }
+            GM_setClipboard(all);
+            document.getElementById('status').textContent = 'Copied to clipboard!\n\n' + all.substring(0, 300) + (all.length > 300 ? '...' : '');
+        };
+
+        document.getElementById('btn-clear').onclick = () => {
+            if (confirm('Clear all collected results?')) clearResults();
+        };
+
+        // Show current collected count
+        const count = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]').length;
+        document.getElementById('status').textContent = `Collected: ${count} addresses\n(Click "Copy All Collected" to view/paste)`;
     }
+
+    // === ON ADDRESS PAGE: Add quick extract button ===
+    if (getAddressNumber()) {
+        const num = getAddressNumber();
+        const btn = document.createElement('button');
+        btn.textContent = `Extract Residents (${num})`;
+        btn.style.cssText = 'position:fixed; top:10px; right:10px; z-index:999999; padding:12px 20px; background:#3b82f6; color:white; border:none; border-radius:6px; font-size:16px; cursor:pointer; box-shadow:0 4px 10px rgba(0,0,0,0.4);';
+        document.body.appendChild(btn);
+
+        btn.onclick = () => {
+            const info = extractResidentInfo();
+            saveResult(num, info);
+            alert(`Saved for ${num}:\n\n${info}`);
+            GM_notification({ title: `Saved ${num}`, text: info.substring(0, 80) + '...' });
+        };
+    }
+
+    // Init panel
+    createControlPanel();
 
 })();
