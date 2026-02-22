@@ -1,14 +1,13 @@
 // ==UserScript==
 // @name         FastPeopleSearch Windermere Ct (200-230) Tab Opener + Scraper
 // @namespace    http://yournamespace/
-// @version      1.3
-// @description  Open 200-230 Windermere Ct pages in tabs + extract resident info
+// @version      1.4
+// @description  Open 200-230 Windermere Ct pages in tabs + extract resident info (clipboard fix)
 // @author       You
 // @match        https://www.fastpeoplesearch.com/*
 // @grant        GM_openInTab
 // @grant        GM_setValue
 // @grant        GM_getValue
-// @grant        GM_setClipboard
 // @grant        GM_notification
 // @run-at       document-end
 // ==/UserScript==
@@ -19,7 +18,7 @@
     // === CONFIG ===
     const START_NUM = 200;
     const END_NUM   = 230;
-    const DELAY_MS  = 1200;           // Increase if tabs get blocked (1500–2000 ms often helps)
+    const DELAY_MS  = 1200;           // Increase to 2000+ if many tabs get blocked
     const STORAGE_KEY = 'windermere_residents_200_230';
 
     // === HELPERS ===
@@ -30,7 +29,6 @@
 
     function extractText() {
         let found = '';
-        // Scan common elements for the tell-tale sentence
         document.querySelectorAll('p, div, span, li, h2, h3, .card-body, [class*="info"], [class*="resident"], [class*="occupant"]').forEach(el => {
             const t = el.textContent.replace(/\s+/g, ' ').trim();
             if (t.includes('most recent tenant') && t.includes('Past residents include')) {
@@ -79,7 +77,7 @@
         };
     }
 
-    // === CONTROL PANEL (always visible on site) ===
+    // === CONTROL PANEL ===
     function addControlPanel() {
         if (document.getElementById('wct-control')) return;
 
@@ -113,21 +111,31 @@
                     return;
                 }
                 const url = `https://www.fastpeoplesearch.com/address/${current}-Windermere-Ct_Canonsburg-PA-15317`;
-                GM_openInTab(url, { active: false, insert: true });   // background tab, insert next to current
+                GM_openInTab(url, { active: false, insert: true });
                 current++;
                 setTimeout(openNext, DELAY_MS);
             }
             openNext();
         };
 
-        document.getElementById('copy-btn').onclick = () => {
+        document.getElementById('copy-btn').onclick = async () => {
             const all = getAllSaved();
+            const statusEl = document.getElementById('status');
+
             if (!all.trim()) {
-                alert('Nothing collected yet.');
+                statusEl.textContent = 'Nothing collected yet.';
                 return;
             }
-            GM_setClipboard(all);
-            document.getElementById('status').textContent = 'Copied to clipboard!\n\n' + all.slice(0, 400) + (all.length > 400 ? '\n...' : '');
+
+            try {
+                await navigator.clipboard.writeText(all);
+                statusEl.textContent = 'Copied to clipboard successfully!\n\n' + all.slice(0, 400) + (all.length > 400 ? '\n...' : '');
+                alert('Copied to clipboard:\n\n' + all.slice(0, 300) + (all.length > 300 ? '...' : ''));
+            } catch (err) {
+                console.error('Clipboard write failed:', err);
+                statusEl.textContent = 'Clipboard copy failed. Error: ' + err.message + '\n\nYou can select the text below manually:\n\n' + all;
+                alert('Copy failed (browser may block it). See panel for text or try again after interacting with the page.');
+            }
         };
 
         document.getElementById('clear-btn').onclick = () => {
@@ -137,7 +145,7 @@
             }
         };
 
-        // Show count on load
+        // Initial count
         const count = Object.keys(GM_getValue(STORAGE_KEY, {})).length;
         document.getElementById('status').textContent = `Collected: ${count} / ${END_NUM - START_NUM + 1}\n(click "Copy All Collected" to paste)`;
     }
