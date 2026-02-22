@@ -15,7 +15,7 @@
     'use strict';
 
     // Change to true if you want it to auto-open all tabs (careful – 31 tabs!)
-    const AUTO_OPEN_TABS = false;
+    const AUTO_OPEN_TABS = true;
 
     // If false, it will scrape the CURRENT page only when you load it
     const BATCH_SCRAPE_ON_LOAD = false;   // usually keep false unless you want auto-scrape
